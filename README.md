@@ -2,6 +2,8 @@
 
 这是一个面向 AI API 开发、集成测试和性能测试的多协议 Mock 服务。服务使用 Go 标准库实现，不依赖外部组件，支持高并发、流式和非流式响应，并返回各平台原生格式的 Usage。
 
+项目地址：[https://github.com/LiPengfei0106/mock-ai-api](https://github.com/LiPengfei0106/mock-ai-api)
+
 服务分为两层：模型模拟层从内置词表随机生成文本，并统一负责输出 Token 数、动态流式分块、TTFT 和 TPS 时序；协议适配层只把同一份模型输出封装为各平台的响应格式。调整模型行为时不需要修改平台协议实现。
 
 ## 快速开始
