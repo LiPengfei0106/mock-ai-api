@@ -4,6 +4,71 @@
 
 服务分为两层：模型模拟层从内置词表随机生成文本，并统一负责输出 Token 数、动态流式分块、TTFT 和 TPS 时序；协议适配层只把同一份模型输出封装为各平台的响应格式。调整模型行为时不需要修改平台协议实现。
 
+## 快速开始
+
+已发布的镜像同时支持 `linux/amd64` 和 `linux/arm64`。以下示例使用明确的版本标签 `riendfly/mock-ai-api:0.1.0`，并将宿主机的 `18080` 端口绑定到 `0.0.0.0`。本机可通过 `http://127.0.0.1:18080` 访问，远程客户端需要使用宿主机实际 IP。
+
+监听 `0.0.0.0` 会允许其他主机访问服务，应通过防火墙或安全组限制来源，不要直接暴露到不可信网络。
+
+### Docker 命令
+
+```bash
+docker run -d \
+  --name mock-ai-api \
+  --restart unless-stopped \
+  --init \
+  --read-only \
+  --security-opt no-new-privileges:true \
+  -p 0.0.0.0:18080:8080 \
+  -e MOCK_ADDR=0.0.0.0:8080 \
+  -e MOCK_MODEL=mock-gpt \
+  -e MOCK_TTFT=300ms..800ms \
+  -e MOCK_TPS=20..60 \
+  -e MOCK_LATENCY=50ms..200ms \
+  -e MOCK_OUTPUT_TOKENS=8..32 \
+  riendfly/mock-ai-api:0.1.0
+
+curl http://127.0.0.1:18080/healthz
+```
+
+### docker-compose.yml
+
+```yaml
+name: mock-ai-api
+
+services:
+  mock-ai-api:
+    image: riendfly/mock-ai-api:0.1.0
+    restart: unless-stopped
+    init: true
+    ports:
+      - "0.0.0.0:18080:8080"
+    environment:
+      MOCK_ADDR: "0.0.0.0:8080"
+      MOCK_MODEL: "mock-gpt"
+      MOCK_TTFT: "300ms..800ms"
+      MOCK_TPS: "20..60"
+      MOCK_LATENCY: "50ms..200ms"
+      MOCK_OUTPUT_TOKENS: "8..32"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 3s
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+```
+
+将以上内容保存为 `docker-compose.yml` 后启动并检查服务：
+
+```bash
+docker compose up -d
+docker compose ps
+curl http://127.0.0.1:18080/healthz
+```
+
 ## 支持的接口
 
 ### 通用
@@ -76,39 +141,14 @@
 
 服务不校验 API Key，请求中可以携带任意 `Authorization`、`x-api-key`、`anthropic-version` 或 `key` 值。
 
-## 启动
+## 请求与配置
 
-要求 Go 1.22 或更高版本：
+### 请求示例
 
-```bash
-go run .
-```
-
-默认监听 `:8080`。也可以构建后运行：
+请求级 Mock 字段可以精确覆盖当前请求的服务端配置。以下示例固定输入和输出 Token 数，便于压测工具稳定统计吞吐量：
 
 ```bash
-go build -o mock-ai-api .
-./mock-ai-api
-```
-
-## 请求示例
-
-非流式 Chat Completions：
-
-```bash
-curl http://127.0.0.1:8080/v1/chat/completions \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "model": "mock-gpt",
-    "messages": [{"role": "user", "content": "hello"}],
-    "max_tokens": 16
-  }'
-```
-
-流式请求可以通过 Mock 扩展字段覆盖当前请求的行为：
-
-```bash
-curl -N http://127.0.0.1:8080/v1/chat/completions \
+curl -N http://127.0.0.1:18080/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{
     "model": "mock-gpt",
@@ -123,33 +163,19 @@ curl -N http://127.0.0.1:8080/v1/chat/completions \
 
 `/v1/responses`、`/v1/completions` 和 `/v1/messages` 使用相同的 Mock 扩展字段。Chat Completions 流以 `chat.completion.chunk` 返回，Responses 流以 `response.output_text.delta` 返回，Completions 流以 `text_completion` 返回，Anthropic 与 Gemini 使用原生 SSE，Ollama 使用逐行 JSON。
 
-Anthropic Messages 示例：
-
-```bash
-curl http://127.0.0.1:8080/v1/messages \
-  -H 'Content-Type: application/json' \
-  -H 'x-api-key: any-value' \
-  -H 'anthropic-version: 2023-06-01' \
-  -d '{
-    "model": "mock-claude",
-    "max_tokens": 16,
-    "messages": [{"role": "user", "content": "hello"}]
-  }'
-```
-
 Embeddings 返回固定的 8 维浮点向量。字符串或整数 Token 数组作为单个输入，字符串数组或二维 Token 数组作为批量输入。该向量只用于接口解析和吞吐测试，不表示真实语义。
 
-## 控制参数
+### 请求级参数
 
 | 请求字段 | 含义 | 限制 |
 | --- | --- | --- |
-| `mock_ttft_ms` | 流式首个文本 Token 前的等待时间 | `0` 到 1 小时 |
-| `mock_tps` | 流式输出速率；`0` 表示不等待 | `0` 到 1000000 |
-| `mock_latency_ms` | 非流式响应延迟 | `0` 到 1 小时 |
-| `mock_input_tokens` | Usage 中的输入 Token 数 | 不小于 `0` |
-| `mock_output_tokens` | 实际输出及 Usage 中的输出 Token 数 | 不超过服务端上限 |
+| `mock_ttft_ms` | 流式首个文本 Token 前的等待时间 | `0` 到 `3600000` 毫秒 |
+| `mock_tps` | 流式输出速率；`0` 表示不等待 | `0` 到 `1000000` |
+| `mock_latency_ms` | 非流式响应延迟 | `0` 到 `3600000` 毫秒 |
+| `mock_input_tokens` | Usage 中的输入 Token 数 | `0` 到 `1000000000` |
+| `mock_output_tokens` | 实际输出及 Usage 中的输出 Token 数 | `1` 到 `1000000` |
 
-请求中的 Mock 扩展字段都是精确值，优先于服务端配置。没有传入 `mock_input_tokens` 时，模型层按输入 JSON 的 Unicode 字符数除以 4 估算。该数值只用于稳定地产生压测指标，不等同于任何真实模型的分词结果。
+请求级参数只接受精确值，不支持范围，并且优先于服务端环境变量。`mock_input_tokens` 没有对应的环境变量；未传入时，服务按消息、Prompt 或 Input 中 Unicode 字符数的四分之一估算。该数值仅用于产生稳定的压测指标，不等同于真实模型的分词结果。
 
 `max_tokens`、`max_completion_tokens` 和 `max_output_tokens` 仍按对应接口语义限制实际输出，超过服务安全上限时自动钳制。若请求同时设置标准最大值和 `mock_output_tokens`，实际输出取两者较小值。
 
@@ -159,93 +185,29 @@ Chat Completions 的流式响应始终在结束前返回一个带 Usage 的空 `
 
 服务聚焦文本生成、Token 统计和向量接口，不执行工具调用、图片/音频生成、文件处理、Batch 或微调任务。请求中的这些扩展字段会被忽略，不应使用本服务验证对应业务语义。
 
-## 随机范围配置
+### 服务端环境变量
 
-数值和时长配置支持 `最小值..最大值` 语法，每个请求独立从该范围内采样。继续填写单值时，最小值和最大值相同，行为与旧配置完全一致。
+TTFT、TPS、延迟和输出 Token 数支持单值或 `最小值..最大值`，使用范围时会为每个请求独立随机采样。
 
-完整的随机配置示例：
+| 变量 | 默认值 | 取值限制 | 含义 |
+| --- | --- | --- | --- |
+| `MOCK_ADDR` | `:8080` | 非空监听地址 | 服务监听地址 |
+| `MOCK_MODEL` | `mock-gpt` | 非空字符串 | 默认模型及模型列表中的模型名 |
+| `MOCK_TTFT` | `0s` | `0s` 到 `1h`，Go 时长格式 | 流式首个文本 Token 前的等待时间 |
+| `MOCK_TPS` | `0` | `0` 到 `1000000` | 流式输出速率；`0` 表示不等待 |
+| `MOCK_LATENCY` | `0s` | `0s` 到 `1h`，Go 时长格式 | 非流式响应延迟 |
+| `MOCK_OUTPUT_TOKENS` | `16` | `1` 到 `1000000` | 默认输出 Token 数 |
+
+## 本地开发
+
+要求 Go 1.22 或更高版本：
 
 ```bash
-MOCK_TTFT=300ms..800ms \
-MOCK_TPS=20..60 \
-MOCK_LATENCY=50ms..200ms \
-MOCK_OUTPUT_TOKENS=8..32 \
+go test ./...
 go run .
 ```
 
-## 环境变量
-
-| 变量 | 默认值 | 含义 |
-| --- | --- | --- |
-| `MOCK_ADDR` | `:8080` | 监听地址 |
-| `MOCK_MODEL` | `mock-gpt` | 默认模型及模型列表中的模型名 |
-| `MOCK_TTFT` | `0s` | 流式 TTFT 范围，使用 Go 时长格式 |
-| `MOCK_TPS` | `0` | 流式 TPS 范围，`0` 表示不等待 |
-| `MOCK_LATENCY` | `0s` | 非流式响应延迟范围 |
-| `MOCK_OUTPUT_TOKENS` | `16` | 输出 Token 数范围 |
-
-例如固定模拟 800ms TTFT 和 40 TPS：
-
-```bash
-MOCK_TTFT=800ms MOCK_TPS=40 MOCK_OUTPUT_TOKENS=32 go run .
-```
-
-## 容器运行
-
-本地构建并运行：
-
-```bash
-docker build -t mock-ai-api:dev .
-docker run --rm -p 8080:8080 \
-  -e MOCK_TTFT=500ms \
-  -e MOCK_TPS=20 \
-  mock-ai-api:dev
-```
-
-发布到 Docker Hub 时，先登录并设置自己的 Docker Hub 用户名。建议使用明确的版本标签：
-
-```bash
-export DOCKERHUB_USERNAME=your-dockerhub-username
-docker login
-docker build -t "${DOCKERHUB_USERNAME}/mock-ai-api:0.1.0" .
-docker push "${DOCKERHUB_USERNAME}/mock-ai-api:0.1.0"
-```
-
-在 Apple Silicon 等 ARM64 环境中发布同时支持 AMD64 和 ARM64 的镜像：
-
-```bash
-export DOCKERHUB_USERNAME=your-dockerhub-username
-docker buildx build \
-  --platform linux/amd64,linux/arm64 \
-  -t "${DOCKERHUB_USERNAME}/mock-ai-api:0.1.0" \
-  --push .
-```
-
-### GitHub Actions 自动发布
-
-仓库包含 `.github/workflows/publish-docker.yml`，可通过 GitHub 托管 Runner 自动测试、构建并发布 `linux/amd64` 和 `linux/arm64` 镜像。发布前需要在 GitHub 仓库的 `Settings > Secrets and variables > Actions` 中配置：
-
-| Secret | 含义 |
-| --- | --- |
-| `DOCKERHUB_USERNAME` | Docker Hub 用户名 |
-| `DOCKERHUB_TOKEN` | 具有目标仓库读写权限的 Docker Hub Access Token |
-
-建议先在 Docker Hub 创建 `mock-ai-api` 仓库，并为自动发布创建独立的 Access Token，不要使用账号密码。
-
-推送语义化版本标签会自动发布对应的精确版本镜像：
-
-```bash
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-也可以在 GitHub 仓库的 `Actions > 发布 Docker 镜像 > Run workflow` 中输入 `0.1.0` 手动发布。工作流不会自动发布或覆盖 `latest` 标签。
-
-### Docker Compose
-
-项目默认构建本地镜像 `mock-ai-api:dev`，并仅发布到 `127.0.0.1:18080`。
-
-构建并后台启动：
+默认监听 `:8080`。项目内的 `compose.yaml` 用于构建本地开发镜像 `mock-ai-api:dev`，默认仅绑定 `127.0.0.1:18080`：
 
 ```bash
 docker compose up -d --build
@@ -253,38 +215,9 @@ docker compose ps
 curl http://127.0.0.1:18080/healthz
 ```
 
-已有本地镜像时可跳过构建：
-
-```bash
-docker compose up -d --no-build
-```
-
-无需环境文件即可使用默认值。需要自定义时，可参考 `.env.example` 创建 `.env`；Docker Compose 会自动读取同目录的 `.env`。也可以临时覆盖单项配置：
-
-```bash
-MOCK_HOST_PORT=28080 \
-MOCK_TTFT=300ms..800ms \
-MOCK_TPS=20..60 \
-MOCK_OUTPUT_TOKENS=8..32 \
-docker compose up -d --build
-```
-
-Compose 专用变量如下，它们不属于服务端应用配置：
-
-| 变量 | 默认值 | 含义 |
-| --- | --- | --- |
-| `MOCK_IMAGE_REPOSITORY` | `mock-ai-api` | 镜像仓库；使用 Docker Hub 镜像时填写 `<用户名>/mock-ai-api` |
-| `MOCK_IMAGE_TAG` | `dev` | 镜像标签 |
-| `MOCK_HOST_IP` | `127.0.0.1` | 发布端口绑定的宿主机地址；需要远程访问时显式改为 `0.0.0.0` |
-| `MOCK_HOST_PORT` | `18080` | 发布到宿主机的 HTTP 端口 |
-| `MOCK_CONTAINER_PORT` | `8080` | 容器内监听端口，同时用于端口映射和健康检查 |
-
-查看日志、检查最终生效配置和停止服务：
+无需环境文件即可使用默认值；需要调整镜像、端口或 Mock 参数时，可复制 `.env.example` 为 `.env`。查看日志或停止服务：
 
 ```bash
 docker compose logs -f mock-ai-api
-docker compose config
 docker compose down
 ```
-
-不同工作区需要同时启动时，应为每个实例设置不同的 `MOCK_HOST_PORT`，并可通过 `docker compose -p <项目名>` 隔离容器和网络资源。服务不校验 API Key；`MOCK_HOST_IP=0.0.0.0` 会监听宿主机所有网卡，不应直接暴露到不可信网络。
