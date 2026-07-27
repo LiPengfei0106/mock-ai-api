@@ -30,6 +30,6 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: ${{ secrets.DOCKERHUB_USERNAME }}/mock-ai-api
-          short-description: 多协议 AI API Mock 服务，支持主流 AI 接口与流式测试
+          short-description: 多协议 AI API Mock 服务，支持主流 AI 接口与流式测试。项目地址：https://github.com/LiPengfei0106/mock-ai-api
           readme-filepath: ./README.md
           enable-url-completion: true
