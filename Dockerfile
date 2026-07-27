@@ -6,6 +6,7 @@ FROM ${GO_IMAGE} AS build
 WORKDIR /src
 COPY go.mod ./
 COPY *.go ./
+COPY web ./web
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/mock-ai-api .
 
 FROM ${RUNTIME_IMAGE}

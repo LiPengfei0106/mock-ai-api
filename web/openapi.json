@@ -1,0 +1,609 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Mock AI API",
+    "version": "0.1.0",
+    "description": "用于 AI API 开发、集成测试和性能测试的多协议 Mock 服务。所有 API Key 仅用于模拟客户端请求，服务不会校验其内容。流式接口可通过请求体中的 `stream` 字段启用，并支持 `mock_ttft_ms`、`mock_tps`、`mock_latency_ms`、`mock_input_tokens` 和 `mock_output_tokens` 测试参数。",
+    "license": { "name": "MIT", "identifier": "MIT" }
+  },
+  "servers": [
+    { "url": "/", "description": "当前 Mock AI API 服务" }
+  ],
+  "security": [],
+  "tags": [
+    { "name": "通用", "description": "服务状态与协议共享接口" },
+    { "name": "OpenAI", "description": "OpenAI 兼容接口，支持 SSE 流式响应" },
+    { "name": "Azure OpenAI", "description": "Azure OpenAI deployment 路径兼容接口" },
+    { "name": "Anthropic", "description": "Anthropic Messages 兼容接口，支持具名 SSE 事件" },
+    { "name": "Google Gemini", "description": "Gemini v1 和 v1beta 兼容接口" },
+    { "name": "Ollama", "description": "Ollama 兼容接口，生成接口默认返回 NDJSON 流" }
+  ],
+  "paths": {
+    "/healthz": {
+      "get": {
+        "tags": ["通用"],
+        "summary": "健康检查",
+        "operationId": "getHealth",
+        "responses": {
+          "200": {
+            "description": "服务正常",
+            "content": { "application/json": { "example": { "status": "ok" } } }
+          },
+          "400": { "$ref": "#/components/responses/ErrorResponse" }
+        }
+      }
+    },
+    "/v1/models": {
+      "get": {
+        "tags": ["通用"],
+        "summary": "获取模型列表",
+        "description": "默认返回 OpenAI 格式；传入 `anthropic-version` 返回 Anthropic 格式；传入 `x-goog-api-key` 或 `key` 返回 Gemini 格式。",
+        "operationId": "listModels",
+        "parameters": [
+          { "$ref": "#/components/parameters/AnthropicVersion" },
+          { "$ref": "#/components/parameters/GeminiKey" }
+        ],
+        "security": [
+          { "BearerAuth": [] },
+          { "AnthropicApiKey": [] },
+          { "GeminiApiKeyHeader": [] },
+          {}
+        ],
+        "responses": { "200": { "$ref": "#/components/responses/JSONResponse" }, "400": { "$ref": "#/components/responses/ErrorResponse" } }
+      }
+    },
+    "/v1/models/{model}": {
+      "get": {
+        "tags": ["通用"],
+        "summary": "获取模型详情",
+        "description": "响应协议识别规则与模型列表接口相同。",
+        "operationId": "getModel",
+        "parameters": [
+          { "$ref": "#/components/parameters/Model" },
+          { "$ref": "#/components/parameters/AnthropicVersion" },
+          { "$ref": "#/components/parameters/GeminiKey" }
+        ],
+        "security": [
+          { "BearerAuth": [] },
+          { "AnthropicApiKey": [] },
+          { "GeminiApiKeyHeader": [] },
+          {}
+        ],
+        "responses": { "200": { "$ref": "#/components/responses/JSONResponse" }, "400": { "$ref": "#/components/responses/ErrorResponse" } }
+      }
+    },
+    "/v1/chat/completions": {
+      "post": {
+        "tags": ["OpenAI"],
+        "summary": "创建聊天补全",
+        "operationId": "createChatCompletion",
+        "security": [{ "BearerAuth": [] }, {}],
+        "requestBody": { "$ref": "#/components/requestBodies/OpenAIChat" },
+        "responses": {
+          "200": {
+            "description": "非流式 JSON 或 SSE 流",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ArbitraryObject" } },
+              "text/event-stream": { "schema": { "type": "string" }, "example": "data: {\"object\":\"chat.completion.chunk\"}\n\ndata: [DONE]\n\n" }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ErrorResponse" }
+        }
+      }
+    },
+    "/v1/completions": {
+      "post": {
+        "tags": ["OpenAI"],
+        "summary": "创建文本补全",
+        "operationId": "createCompletion",
+        "security": [{ "BearerAuth": [] }, {}],
+        "requestBody": { "$ref": "#/components/requestBodies/OpenAICompletion" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/JSONOrStreamResponse" },
+          "400": { "$ref": "#/components/responses/ErrorResponse" }
+        }
+      }
+    },
+    "/v1/embeddings": {
+      "post": {
+        "tags": ["OpenAI"],
+        "summary": "创建向量",
+        "operationId": "createEmbedding",
+        "security": [{ "BearerAuth": [] }, {}],
+        "requestBody": { "$ref": "#/components/requestBodies/OpenAIEmbedding" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/JSONResponse" },
+          "400": { "$ref": "#/components/responses/ErrorResponse" }
+        }
+      }
+    },
+    "/v1/responses": {
+      "post": {
+        "tags": ["OpenAI"],
+        "summary": "创建响应",
+        "operationId": "createResponse",
+        "security": [{ "BearerAuth": [] }, {}],
+        "requestBody": { "$ref": "#/components/requestBodies/OpenAIResponse" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/JSONOrStreamResponse" },
+          "400": { "$ref": "#/components/responses/ErrorResponse" }
+        }
+      }
+    },
+    "/v1/messages": {
+      "post": {
+        "tags": ["Anthropic"],
+        "summary": "创建消息",
+        "operationId": "createAnthropicMessage",
+        "parameters": [{ "$ref": "#/components/parameters/AnthropicVersionRequired" }],
+        "security": [{ "AnthropicApiKey": [] }, {}],
+        "requestBody": { "$ref": "#/components/requestBodies/AnthropicMessage" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/JSONOrStreamResponse" },
+          "400": { "$ref": "#/components/responses/ErrorResponse" }
+        }
+      }
+    },
+    "/v1/messages/count_tokens": {
+      "post": {
+        "tags": ["Anthropic"],
+        "summary": "计算输入 Token",
+        "operationId": "countAnthropicTokens",
+        "parameters": [{ "$ref": "#/components/parameters/AnthropicVersionRequired" }],
+        "security": [{ "AnthropicApiKey": [] }, {}],
+        "requestBody": { "$ref": "#/components/requestBodies/AnthropicMessage" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/JSONResponse" },
+          "400": { "$ref": "#/components/responses/ErrorResponse" }
+        }
+      }
+    },
+    "/openai/deployments/{deployment}/chat/completions": {
+      "post": {
+        "tags": ["Azure OpenAI"],
+        "summary": "创建聊天补全",
+        "operationId": "createAzureChatCompletion",
+        "parameters": [
+          { "$ref": "#/components/parameters/Deployment" },
+          { "$ref": "#/components/parameters/APIVersion" }
+        ],
+        "security": [{ "AzureApiKey": [] }, {}],
+        "requestBody": { "$ref": "#/components/requestBodies/OpenAIChat" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/JSONOrStreamResponse" },
+          "400": { "$ref": "#/components/responses/ErrorResponse" }
+        }
+      }
+    },
+    "/openai/deployments/{deployment}/completions": {
+      "post": {
+        "tags": ["Azure OpenAI"],
+        "summary": "创建文本补全",
+        "operationId": "createAzureCompletion",
+        "parameters": [
+          { "$ref": "#/components/parameters/Deployment" },
+          { "$ref": "#/components/parameters/APIVersion" }
+        ],
+        "security": [{ "AzureApiKey": [] }, {}],
+        "requestBody": { "$ref": "#/components/requestBodies/OpenAICompletion" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/JSONOrStreamResponse" },
+          "400": { "$ref": "#/components/responses/ErrorResponse" }
+        }
+      }
+    },
+    "/openai/deployments/{deployment}/embeddings": {
+      "post": {
+        "tags": ["Azure OpenAI"],
+        "summary": "创建向量",
+        "operationId": "createAzureEmbedding",
+        "parameters": [
+          { "$ref": "#/components/parameters/Deployment" },
+          { "$ref": "#/components/parameters/APIVersion" }
+        ],
+        "security": [{ "AzureApiKey": [] }, {}],
+        "requestBody": { "$ref": "#/components/requestBodies/OpenAIEmbedding" },
+        "responses": {
+          "200": { "$ref": "#/components/responses/JSONResponse" },
+          "400": { "$ref": "#/components/responses/ErrorResponse" }
+        }
+      }
+    },
+    "/v1beta/models": {
+      "get": {
+        "tags": ["Google Gemini"],
+        "summary": "获取 Gemini 模型列表",
+        "operationId": "listGeminiModels",
+        "parameters": [{ "$ref": "#/components/parameters/GeminiKey" }],
+        "security": [{ "GeminiApiKeyHeader": [] }, { "GeminiApiKeyQuery": [] }, {}],
+        "responses": { "200": { "$ref": "#/components/responses/JSONResponse" }, "400": { "$ref": "#/components/responses/ErrorResponse" } }
+      }
+    },
+    "/v1beta/models/{model}": {
+      "get": {
+        "tags": ["Google Gemini"],
+        "summary": "获取 Gemini 模型详情",
+        "operationId": "getGeminiModel",
+        "parameters": [
+          { "$ref": "#/components/parameters/Model" },
+          { "$ref": "#/components/parameters/GeminiKey" }
+        ],
+        "security": [{ "GeminiApiKeyHeader": [] }, { "GeminiApiKeyQuery": [] }, {}],
+        "responses": { "200": { "$ref": "#/components/responses/JSONResponse" }, "400": { "$ref": "#/components/responses/ErrorResponse" } }
+      }
+    },
+    "/v1/models/{model}:generateContent": {
+      "post": {
+        "tags": ["Google Gemini"], "summary": "生成内容（v1）", "operationId": "generateGeminiContentV1",
+        "parameters": [{ "$ref": "#/components/parameters/Model" }, { "$ref": "#/components/parameters/GeminiKey" }],
+        "security": [{ "GeminiApiKeyHeader": [] }, { "GeminiApiKeyQuery": [] }, {}],
+        "requestBody": { "$ref": "#/components/requestBodies/GeminiGenerate" },
+        "responses": { "200": { "$ref": "#/components/responses/JSONResponse" }, "400": { "$ref": "#/components/responses/ErrorResponse" } }
+      }
+    },
+    "/v1/models/{model}:streamGenerateContent": {
+      "post": {
+        "tags": ["Google Gemini"], "summary": "流式生成内容（v1）", "operationId": "streamGeminiContentV1",
+        "parameters": [{ "$ref": "#/components/parameters/Model" }, { "$ref": "#/components/parameters/GeminiKey" }, { "$ref": "#/components/parameters/GeminiAlt" }],
+        "security": [{ "GeminiApiKeyHeader": [] }, { "GeminiApiKeyQuery": [] }, {}],
+        "requestBody": { "$ref": "#/components/requestBodies/GeminiGenerate" },
+        "responses": { "200": { "$ref": "#/components/responses/StreamResponse" }, "400": { "$ref": "#/components/responses/ErrorResponse" } }
+      }
+    },
+    "/v1/models/{model}:countTokens": {
+      "post": {
+        "tags": ["Google Gemini"], "summary": "计算 Token（v1）", "operationId": "countGeminiTokensV1",
+        "parameters": [{ "$ref": "#/components/parameters/Model" }, { "$ref": "#/components/parameters/GeminiKey" }],
+        "security": [{ "GeminiApiKeyHeader": [] }, { "GeminiApiKeyQuery": [] }, {}],
+        "requestBody": { "$ref": "#/components/requestBodies/GeminiGenerate" },
+        "responses": { "200": { "$ref": "#/components/responses/JSONResponse" }, "400": { "$ref": "#/components/responses/ErrorResponse" } }
+      }
+    },
+    "/v1/models/{model}:embedContent": {
+      "post": {
+        "tags": ["Google Gemini"], "summary": "创建向量（v1）", "operationId": "embedGeminiContentV1",
+        "parameters": [{ "$ref": "#/components/parameters/Model" }, { "$ref": "#/components/parameters/GeminiKey" }],
+        "security": [{ "GeminiApiKeyHeader": [] }, { "GeminiApiKeyQuery": [] }, {}],
+        "requestBody": { "$ref": "#/components/requestBodies/GeminiEmbed" },
+        "responses": { "200": { "$ref": "#/components/responses/JSONResponse" }, "400": { "$ref": "#/components/responses/ErrorResponse" } }
+      }
+    },
+    "/v1/models/{model}:batchEmbedContents": {
+      "post": {
+        "tags": ["Google Gemini"], "summary": "批量创建向量（v1）", "operationId": "batchEmbedGeminiContentsV1",
+        "parameters": [{ "$ref": "#/components/parameters/Model" }, { "$ref": "#/components/parameters/GeminiKey" }],
+        "security": [{ "GeminiApiKeyHeader": [] }, { "GeminiApiKeyQuery": [] }, {}],
+        "requestBody": { "$ref": "#/components/requestBodies/GeminiBatchEmbed" },
+        "responses": { "200": { "$ref": "#/components/responses/JSONResponse" }, "400": { "$ref": "#/components/responses/ErrorResponse" } }
+      }
+    },
+    "/v1beta/models/{model}:generateContent": {
+      "post": {
+        "tags": ["Google Gemini"], "summary": "生成内容（v1beta）", "operationId": "generateGeminiContentV1Beta",
+        "parameters": [{ "$ref": "#/components/parameters/Model" }, { "$ref": "#/components/parameters/GeminiKey" }],
+        "security": [{ "GeminiApiKeyHeader": [] }, { "GeminiApiKeyQuery": [] }, {}],
+        "requestBody": { "$ref": "#/components/requestBodies/GeminiGenerate" },
+        "responses": { "200": { "$ref": "#/components/responses/JSONResponse" }, "400": { "$ref": "#/components/responses/ErrorResponse" } }
+      }
+    },
+    "/v1beta/models/{model}:streamGenerateContent": {
+      "post": {
+        "tags": ["Google Gemini"], "summary": "流式生成内容（v1beta）", "operationId": "streamGeminiContentV1Beta",
+        "parameters": [{ "$ref": "#/components/parameters/Model" }, { "$ref": "#/components/parameters/GeminiKey" }, { "$ref": "#/components/parameters/GeminiAlt" }],
+        "security": [{ "GeminiApiKeyHeader": [] }, { "GeminiApiKeyQuery": [] }, {}],
+        "requestBody": { "$ref": "#/components/requestBodies/GeminiGenerate" },
+        "responses": { "200": { "$ref": "#/components/responses/StreamResponse" }, "400": { "$ref": "#/components/responses/ErrorResponse" } }
+      }
+    },
+    "/v1beta/models/{model}:countTokens": {
+      "post": {
+        "tags": ["Google Gemini"], "summary": "计算 Token（v1beta）", "operationId": "countGeminiTokensV1Beta",
+        "parameters": [{ "$ref": "#/components/parameters/Model" }, { "$ref": "#/components/parameters/GeminiKey" }],
+        "security": [{ "GeminiApiKeyHeader": [] }, { "GeminiApiKeyQuery": [] }, {}],
+        "requestBody": { "$ref": "#/components/requestBodies/GeminiGenerate" },
+        "responses": { "200": { "$ref": "#/components/responses/JSONResponse" }, "400": { "$ref": "#/components/responses/ErrorResponse" } }
+      }
+    },
+    "/v1beta/models/{model}:embedContent": {
+      "post": {
+        "tags": ["Google Gemini"], "summary": "创建向量（v1beta）", "operationId": "embedGeminiContentV1Beta",
+        "parameters": [{ "$ref": "#/components/parameters/Model" }, { "$ref": "#/components/parameters/GeminiKey" }],
+        "security": [{ "GeminiApiKeyHeader": [] }, { "GeminiApiKeyQuery": [] }, {}],
+        "requestBody": { "$ref": "#/components/requestBodies/GeminiEmbed" },
+        "responses": { "200": { "$ref": "#/components/responses/JSONResponse" }, "400": { "$ref": "#/components/responses/ErrorResponse" } }
+      }
+    },
+    "/v1beta/models/{model}:batchEmbedContents": {
+      "post": {
+        "tags": ["Google Gemini"], "summary": "批量创建向量（v1beta）", "operationId": "batchEmbedGeminiContentsV1Beta",
+        "parameters": [{ "$ref": "#/components/parameters/Model" }, { "$ref": "#/components/parameters/GeminiKey" }],
+        "security": [{ "GeminiApiKeyHeader": [] }, { "GeminiApiKeyQuery": [] }, {}],
+        "requestBody": { "$ref": "#/components/requestBodies/GeminiBatchEmbed" },
+        "responses": { "200": { "$ref": "#/components/responses/JSONResponse" }, "400": { "$ref": "#/components/responses/ErrorResponse" } }
+      }
+    },
+    "/api/tags": {
+      "get": {
+        "tags": ["Ollama"], "summary": "获取本地模型", "operationId": "listOllamaModels",
+        "responses": { "200": { "$ref": "#/components/responses/JSONResponse" }, "400": { "$ref": "#/components/responses/ErrorResponse" } }
+      }
+    },
+    "/api/show": {
+      "post": {
+        "tags": ["Ollama"], "summary": "获取模型详情", "operationId": "showOllamaModel",
+        "requestBody": { "$ref": "#/components/requestBodies/OllamaShow" },
+        "responses": { "200": { "$ref": "#/components/responses/JSONResponse" }, "400": { "$ref": "#/components/responses/ErrorResponse" } }
+      }
+    },
+    "/api/chat": {
+      "post": {
+        "tags": ["Ollama"], "summary": "生成对话", "description": "`stream` 默认为 `true`，流式响应为 NDJSON。", "operationId": "createOllamaChat",
+        "requestBody": { "$ref": "#/components/requestBodies/OllamaChat" },
+        "responses": { "200": { "$ref": "#/components/responses/JSONOrNDJSONResponse" }, "400": { "$ref": "#/components/responses/ErrorResponse" } }
+      }
+    },
+    "/api/generate": {
+      "post": {
+        "tags": ["Ollama"], "summary": "生成文本", "description": "`stream` 默认为 `true`，流式响应为 NDJSON。", "operationId": "generateOllamaText",
+        "requestBody": { "$ref": "#/components/requestBodies/OllamaGenerate" },
+        "responses": { "200": { "$ref": "#/components/responses/JSONOrNDJSONResponse" }, "400": { "$ref": "#/components/responses/ErrorResponse" } }
+      }
+    },
+    "/api/embed": {
+      "post": {
+        "tags": ["Ollama"], "summary": "创建向量", "operationId": "createOllamaEmbedding",
+        "requestBody": { "$ref": "#/components/requestBodies/OllamaEmbed" },
+        "responses": { "200": { "$ref": "#/components/responses/JSONResponse" }, "400": { "$ref": "#/components/responses/ErrorResponse" } }
+      }
+    },
+    "/api/embeddings": {
+      "post": {
+        "tags": ["Ollama"], "summary": "创建向量（旧版）", "operationId": "createOllamaLegacyEmbedding",
+        "requestBody": { "$ref": "#/components/requestBodies/OllamaLegacyEmbedding" },
+        "responses": { "200": { "$ref": "#/components/responses/JSONResponse" }, "400": { "$ref": "#/components/responses/ErrorResponse" } }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "API Key", "description": "OpenAI API Key；Mock 服务不校验内容。" },
+      "AzureApiKey": { "type": "apiKey", "in": "header", "name": "api-key", "description": "Azure OpenAI API Key；Mock 服务不校验内容。" },
+      "AnthropicApiKey": { "type": "apiKey", "in": "header", "name": "x-api-key", "description": "Anthropic API Key；Mock 服务不校验内容。" },
+      "GeminiApiKeyHeader": { "type": "apiKey", "in": "header", "name": "x-goog-api-key", "description": "Gemini API Key 请求头；Mock 服务不校验内容。" },
+      "GeminiApiKeyQuery": { "type": "apiKey", "in": "query", "name": "key", "description": "Gemini API Key 查询参数；Mock 服务不校验内容。" }
+    },
+    "parameters": {
+      "Model": { "name": "model", "in": "path", "required": true, "description": "模型名称", "schema": { "type": "string", "default": "mock-gpt" } },
+      "Deployment": { "name": "deployment", "in": "path", "required": true, "description": "Azure deployment 名称", "schema": { "type": "string", "default": "mock-gpt" } },
+      "APIVersion": { "name": "api-version", "in": "query", "required": true, "description": "Azure OpenAI API 版本", "schema": { "type": "string", "default": "2024-10-21" } },
+      "AnthropicVersion": { "name": "anthropic-version", "in": "header", "required": false, "description": "设置后共享模型接口返回 Anthropic 格式", "schema": { "type": "string", "example": "2023-06-01" } },
+      "AnthropicVersionRequired": { "name": "anthropic-version", "in": "header", "required": true, "description": "Anthropic API 版本", "schema": { "type": "string", "default": "2023-06-01" } },
+      "GeminiKey": { "name": "key", "in": "query", "required": false, "description": "Gemini API Key；可填写任意测试值", "schema": { "type": "string", "example": "test" } },
+      "GeminiAlt": { "name": "alt", "in": "query", "required": false, "description": "设置为 sse 获取 SSE 流", "schema": { "type": "string", "default": "sse", "enum": ["sse"] } }
+    },
+    "requestBodies": {
+      "OpenAIChat": {
+        "required": true,
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OpenAIChatRequest" } } }
+      },
+      "OpenAICompletion": {
+        "required": true,
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OpenAICompletionRequest" } } }
+      },
+      "OpenAIResponse": {
+        "required": true,
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OpenAIResponseRequest" } } }
+      },
+      "OpenAIEmbedding": {
+        "required": true,
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OpenAIEmbeddingRequest" } } }
+      },
+      "AnthropicMessage": {
+        "required": true,
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AnthropicMessageRequest" } } }
+      },
+      "GeminiGenerate": {
+        "required": true,
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GeminiGenerateRequest" } } }
+      },
+      "GeminiEmbed": {
+        "required": true,
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GeminiEmbedRequest" } } }
+      },
+      "GeminiBatchEmbed": {
+        "required": true,
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GeminiBatchEmbedRequest" } } }
+      },
+      "OllamaShow": {
+        "required": true,
+        "content": { "application/json": { "schema": { "type": "object", "properties": { "model": { "type": "string", "default": "mock-gpt" } }, "required": ["model"] } } }
+      },
+      "OllamaChat": {
+        "required": true,
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OllamaChatRequest" } } }
+      },
+      "OllamaGenerate": {
+        "required": true,
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OllamaGenerateRequest" } } }
+      },
+      "OllamaEmbed": {
+        "required": true,
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OllamaEmbedRequest" } } }
+      },
+      "OllamaLegacyEmbedding": {
+        "required": true,
+        "content": { "application/json": { "schema": { "type": "object", "properties": { "model": { "type": "string", "default": "mock-gpt" }, "prompt": { "type": "string", "default": "你好" }, "mock_input_tokens": { "$ref": "#/components/schemas/MockInputTokens" } }, "required": ["prompt"] } } }
+      }
+    },
+    "responses": {
+      "JSONResponse": { "description": "JSON 响应", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ArbitraryObject" } } } },
+      "StreamResponse": { "description": "SSE 流式响应", "content": { "text/event-stream": { "schema": { "type": "string" } } } },
+      "JSONOrStreamResponse": { "description": "非流式 JSON 或 SSE 流", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ArbitraryObject" } }, "text/event-stream": { "schema": { "type": "string" } } } },
+      "JSONOrNDJSONResponse": { "description": "非流式 JSON 或 NDJSON 流", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ArbitraryObject" } }, "application/x-ndjson": { "schema": { "type": "string" } } } },
+      "ErrorResponse": { "description": "请求参数错误", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ArbitraryObject" } } } }
+    },
+    "schemas": {
+      "ArbitraryObject": { "type": "object", "additionalProperties": true },
+      "Message": {
+        "type": "object",
+        "properties": {
+          "role": { "type": "string", "enum": ["system", "user", "assistant"], "default": "user" },
+          "content": { "oneOf": [{ "type": "string" }, { "type": "array", "items": {} }], "default": "你好" }
+        },
+        "required": ["role", "content"]
+      },
+      "Stream": { "type": "boolean", "default": false, "description": "是否返回流式响应" },
+      "MockTTFT": { "type": "integer", "minimum": 0, "maximum": 3600000, "default": 100, "description": "首个文本 Token 等待毫秒数" },
+      "MockTPS": { "type": "number", "minimum": 0, "maximum": 1000000, "default": 20, "description": "流式输出 Token 每秒；0 表示不等待" },
+      "MockLatency": { "type": "integer", "minimum": 0, "maximum": 3600000, "default": 50, "description": "非流式响应延迟毫秒数" },
+      "MockInputTokens": { "type": "integer", "minimum": 0, "maximum": 1000000000, "default": 8, "description": "Usage 中的输入 Token 数" },
+      "MockOutputTokens": { "type": "integer", "minimum": 1, "maximum": 1000000, "default": 8, "description": "实际生成及 Usage 中的输出 Token 数" },
+      "OpenAIChatRequest": {
+        "type": "object",
+        "properties": {
+          "model": { "type": "string", "default": "mock-gpt" },
+          "messages": { "type": "array", "items": { "$ref": "#/components/schemas/Message" }, "default": [{ "role": "user", "content": "你好" }] },
+          "stream": { "$ref": "#/components/schemas/Stream" },
+          "max_tokens": { "type": "integer", "minimum": 1, "default": 32 },
+          "max_completion_tokens": { "type": "integer", "minimum": 1 },
+          "stream_options": { "type": "object", "additionalProperties": true },
+          "mock_ttft_ms": { "$ref": "#/components/schemas/MockTTFT" },
+          "mock_tps": { "$ref": "#/components/schemas/MockTPS" },
+          "mock_latency_ms": { "$ref": "#/components/schemas/MockLatency" },
+          "mock_input_tokens": { "$ref": "#/components/schemas/MockInputTokens" },
+          "mock_output_tokens": { "$ref": "#/components/schemas/MockOutputTokens" }
+        },
+        "required": ["messages"]
+      },
+      "OpenAICompletionRequest": {
+        "type": "object",
+        "properties": {
+          "model": { "type": "string", "default": "mock-gpt" },
+          "prompt": { "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }], "default": "你好" },
+          "stream": { "$ref": "#/components/schemas/Stream" },
+          "max_tokens": { "type": "integer", "minimum": 1, "default": 32 },
+          "mock_ttft_ms": { "$ref": "#/components/schemas/MockTTFT" },
+          "mock_tps": { "$ref": "#/components/schemas/MockTPS" },
+          "mock_latency_ms": { "$ref": "#/components/schemas/MockLatency" },
+          "mock_input_tokens": { "$ref": "#/components/schemas/MockInputTokens" },
+          "mock_output_tokens": { "$ref": "#/components/schemas/MockOutputTokens" }
+        },
+        "required": ["prompt"]
+      },
+      "OpenAIResponseRequest": {
+        "type": "object",
+        "properties": {
+          "model": { "type": "string", "default": "mock-gpt" },
+          "input": { "oneOf": [{ "type": "string" }, { "type": "array", "items": {} }], "default": "你好" },
+          "stream": { "$ref": "#/components/schemas/Stream" },
+          "max_output_tokens": { "type": "integer", "minimum": 1, "default": 32 },
+          "mock_ttft_ms": { "$ref": "#/components/schemas/MockTTFT" },
+          "mock_tps": { "$ref": "#/components/schemas/MockTPS" },
+          "mock_latency_ms": { "$ref": "#/components/schemas/MockLatency" },
+          "mock_input_tokens": { "$ref": "#/components/schemas/MockInputTokens" },
+          "mock_output_tokens": { "$ref": "#/components/schemas/MockOutputTokens" }
+        },
+        "required": ["input"]
+      },
+      "OpenAIEmbeddingRequest": {
+        "type": "object",
+        "properties": {
+          "model": { "type": "string", "default": "mock-gpt" },
+          "input": { "oneOf": [{ "type": "string" }, { "type": "array", "items": {} }], "default": "你好" },
+          "mock_latency_ms": { "$ref": "#/components/schemas/MockLatency" },
+          "mock_input_tokens": { "$ref": "#/components/schemas/MockInputTokens" }
+        },
+        "required": ["input"]
+      },
+      "AnthropicMessageRequest": {
+        "type": "object",
+        "properties": {
+          "model": { "type": "string", "default": "mock-gpt" },
+          "max_tokens": { "type": "integer", "minimum": 1, "default": 32 },
+          "system": { "oneOf": [{ "type": "string" }, { "type": "array", "items": {} }] },
+          "messages": { "type": "array", "items": { "$ref": "#/components/schemas/Message" }, "default": [{ "role": "user", "content": "你好" }] },
+          "stream": { "$ref": "#/components/schemas/Stream" },
+          "mock_ttft_ms": { "$ref": "#/components/schemas/MockTTFT" },
+          "mock_tps": { "$ref": "#/components/schemas/MockTPS" },
+          "mock_latency_ms": { "$ref": "#/components/schemas/MockLatency" },
+          "mock_input_tokens": { "$ref": "#/components/schemas/MockInputTokens" },
+          "mock_output_tokens": { "$ref": "#/components/schemas/MockOutputTokens" }
+        },
+        "required": ["messages"]
+      },
+      "GeminiPart": { "type": "object", "properties": { "text": { "type": "string", "default": "你好" } }, "required": ["text"] },
+      "GeminiContent": { "type": "object", "properties": { "role": { "type": "string", "default": "user" }, "parts": { "type": "array", "items": { "$ref": "#/components/schemas/GeminiPart" } } }, "required": ["parts"] },
+      "GeminiGenerateRequest": {
+        "type": "object",
+        "properties": {
+          "contents": { "type": "array", "items": { "$ref": "#/components/schemas/GeminiContent" }, "default": [{ "role": "user", "parts": [{ "text": "你好" }] }] },
+          "generationConfig": { "type": "object", "properties": { "maxOutputTokens": { "type": "integer", "minimum": 1, "default": 32 } } },
+          "mock_ttft_ms": { "$ref": "#/components/schemas/MockTTFT" },
+          "mock_tps": { "$ref": "#/components/schemas/MockTPS" },
+          "mock_latency_ms": { "$ref": "#/components/schemas/MockLatency" },
+          "mock_input_tokens": { "$ref": "#/components/schemas/MockInputTokens" },
+          "mock_output_tokens": { "$ref": "#/components/schemas/MockOutputTokens" }
+        },
+        "required": ["contents"]
+      },
+      "GeminiEmbedRequest": {
+        "type": "object",
+        "properties": {
+          "content": { "$ref": "#/components/schemas/GeminiContent" },
+          "mock_latency_ms": { "$ref": "#/components/schemas/MockLatency" },
+          "mock_input_tokens": { "$ref": "#/components/schemas/MockInputTokens" }
+        },
+        "required": ["content"]
+      },
+      "GeminiBatchEmbedRequest": {
+        "type": "object",
+        "properties": {
+          "requests": { "type": "array", "items": { "type": "object", "properties": { "model": { "type": "string", "default": "models/mock-gpt" }, "content": { "$ref": "#/components/schemas/GeminiContent" } }, "required": ["content"] }, "minItems": 1 },
+          "mock_latency_ms": { "$ref": "#/components/schemas/MockLatency" },
+          "mock_input_tokens": { "$ref": "#/components/schemas/MockInputTokens" }
+        },
+        "required": ["requests"]
+      },
+      "OllamaChatRequest": {
+        "type": "object",
+        "properties": {
+          "model": { "type": "string", "default": "mock-gpt" },
+          "messages": { "type": "array", "items": { "$ref": "#/components/schemas/Message" }, "default": [{ "role": "user", "content": "你好" }] },
+          "stream": { "type": "boolean", "default": true },
+          "options": { "type": "object", "properties": { "num_predict": { "type": "integer", "minimum": 1, "default": 32 } } },
+          "mock_ttft_ms": { "$ref": "#/components/schemas/MockTTFT" },
+          "mock_tps": { "$ref": "#/components/schemas/MockTPS" },
+          "mock_latency_ms": { "$ref": "#/components/schemas/MockLatency" },
+          "mock_input_tokens": { "$ref": "#/components/schemas/MockInputTokens" },
+          "mock_output_tokens": { "$ref": "#/components/schemas/MockOutputTokens" }
+        },
+        "required": ["messages"]
+      },
+      "OllamaGenerateRequest": {
+        "type": "object",
+        "properties": {
+          "model": { "type": "string", "default": "mock-gpt" },
+          "prompt": { "type": "string", "default": "你好" },
+          "stream": { "type": "boolean", "default": true },
+          "options": { "type": "object", "properties": { "num_predict": { "type": "integer", "minimum": 1, "default": 32 } } },
+          "mock_ttft_ms": { "$ref": "#/components/schemas/MockTTFT" },
+          "mock_tps": { "$ref": "#/components/schemas/MockTPS" },
+          "mock_latency_ms": { "$ref": "#/components/schemas/MockLatency" },
+          "mock_input_tokens": { "$ref": "#/components/schemas/MockInputTokens" },
+          "mock_output_tokens": { "$ref": "#/components/schemas/MockOutputTokens" }
+        },
+        "required": ["prompt"]
+      },
+      "OllamaEmbedRequest": {
+        "type": "object",
+        "properties": {
+          "model": { "type": "string", "default": "mock-gpt" },
+          "input": { "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }], "default": "你好" },
+          "mock_latency_ms": { "$ref": "#/components/schemas/MockLatency" },
+          "mock_input_tokens": { "$ref": "#/components/schemas/MockInputTokens" }
+        },
+        "required": ["input"]
+      }
+    }
+  }
+}

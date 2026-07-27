@@ -31,6 +31,17 @@ docker run -d \
 curl http://127.0.0.1:18080/healthz
 ```
 
+### Web 接口测试
+
+服务内置基于 [Scalar](https://github.com/scalar/scalar) 的 OpenAPI 测试页面。启动服务后访问：
+
+- `http://127.0.0.1:18080/docs`：浏览并直接调用全部接口；
+- `http://127.0.0.1:18080/openapi.json`：获取 OpenAPI 3.1 文档。
+
+根路径会自动跳转到 `/docs`。页面包含 OpenAI、Azure OpenAI、Anthropic、Google Gemini 和 Ollama 的请求示例，并声明了 SSE 与 NDJSON 流式响应格式。鉴权面板支持 Bearer Token 及各平台原生 API Key；Mock 服务不会校验填写的 Key。
+
+Scalar 前端资源固定使用 `@scalar/api-reference@1.63.0`，由浏览器从 jsDelivr CDN 加载并通过 SRI 校验。服务端 API 和 OpenAPI 文档不依赖外网；首次打开测试页面时，浏览器需要能够访问 `cdn.jsdelivr.net`。
+
 ### docker-compose.yml
 
 ```yaml
@@ -197,6 +208,30 @@ TTFT、TPS、延迟和输出 Token 数支持单值或 `最小值..最大值`，�
 | `MOCK_TPS` | `0` | `0` 到 `1000000` | 流式输出速率；`0` 表示不等待 |
 | `MOCK_LATENCY` | `0s` | `0s` 到 `1h`，Go 时长格式 | 非流式响应延迟 |
 | `MOCK_OUTPUT_TOKENS` | `16` | `1` 到 `1000000` | 默认输出 Token 数 |
+
+## 项目结构
+
+项目保持单一 `main` 包，避免为小型服务引入不必要的跨包接口；源码按职责和协议拆分：
+
+```text
+.
+|-- main.go             # 进程启动与优雅退出
+|-- config.go           # 环境变量和范围配置
+|-- server.go           # 路由、共享模型接口及 OpenAI 核心处理
+|-- request.go          # 请求解析、Mock 参数和采样逻辑
+|-- http.go             # JSON、SSE 和 HTTP 通用工具
+|-- model.go            # 模型文本及流式分块模拟
+|-- openai.go           # OpenAI Completions 与 Embeddings
+|-- anthropic.go        # Anthropic 协议适配
+|-- gemini.go           # Google Gemini 协议适配
+|-- ollama.go           # Ollama 协议适配
+|-- web.go              # Web 与 OpenAPI 资源处理
+`-- web/
+    |-- index.html      # Scalar 测试页面
+    `-- openapi.json    # OpenAPI 3.1 定义
+```
+
+测试文件与对应源码同名；各平台协议测试分别位于 `openai_test.go`、`anthropic_test.go`、`gemini_test.go` 和 `ollama_test.go`。
 
 ## 本地开发
 
