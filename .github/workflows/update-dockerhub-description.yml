@@ -1,0 +1,35 @@
+name: 更新 Docker Hub 描述
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - README.md
+      - .github/workflows/update-dockerhub-description.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: update-dockerhub-description
+  cancel-in-progress: true
+
+jobs:
+  update:
+    name: 同步项目说明
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7
+
+      - name: 更新 Docker Hub 页面
+        uses: peter-evans/dockerhub-description@v5
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ secrets.DOCKERHUB_USERNAME }}/mock-ai-api
+          short-description: 多协议 AI API Mock 服务，支持主流 AI 接口与流式测试
+          readme-filepath: ./README.md
+          enable-url-completion: true
