@@ -1,0 +1,5 @@
+.git
+.env
+mock-ai-api
+*.test
+README.md

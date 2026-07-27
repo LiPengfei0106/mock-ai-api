@@ -1,0 +1,5 @@
+.DS_Store
+.env
+mock-ai-api
+*.test
+coverage.out

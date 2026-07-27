@@ -1,0 +1,42 @@
+name: mock-ai-api
+
+services:
+  mock-ai-api:
+    # 默认构建本地开发镜像，也可以通过环境变量指定已发布的镜像。
+    image: "${MOCK_IMAGE_REPOSITORY:-mock-ai-api}:${MOCK_IMAGE_TAG:-dev}"
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+    ports:
+      - name: http
+        target: ${MOCK_CONTAINER_PORT:-8080}
+        published: ${MOCK_HOST_PORT:-18080}
+        host_ip: "${MOCK_HOST_IP:-127.0.0.1}"
+        protocol: tcp
+    environment:
+      # 容器监听地址必须与 MOCK_CONTAINER_PORT 保持一致。
+      MOCK_ADDR: "0.0.0.0:${MOCK_CONTAINER_PORT:-8080}"
+      MOCK_MODEL: "${MOCK_MODEL:-mock-gpt}"
+      # 数值和时长配置支持 min..max 范围。
+      MOCK_TTFT: "${MOCK_TTFT:-0s}"
+      MOCK_TPS: "${MOCK_TPS:-0}"
+      MOCK_LATENCY: "${MOCK_LATENCY:-0s}"
+      MOCK_OUTPUT_TOKENS: "${MOCK_OUTPUT_TOKENS:-16}"
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - -q
+        - -O
+        - /dev/null
+        - "http://127.0.0.1:${MOCK_CONTAINER_PORT:-8080}/healthz"
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 3s
+    stop_grace_period: 15s
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
